@@ -1,0 +1,24 @@
+-- Run in the Supabase SQL Editor after creating your project.
+-- First create your admin user in Authentication > Users > Add user.
+-- Replace the email below with the EXACT email you used for that account.
+create table if not exists public.admins (user_id uuid primary key references auth.users(id) on delete cascade);
+create table if not exists public.cards (
+ id uuid primary key default gen_random_uuid(),
+ player text not null, year integer, sport text not null default 'Baseball',
+ team text, set_name text, card_type text, grade text,
+ status text not null default 'PC' check(status in ('PC','For Sale','Open to Offers','For Trade')),
+ story text, featured boolean not null default false,
+ image_url text, image_path text,
+ created_at timestamptz not null default now()
+);
+alter table public.admins enable row level security;
+alter table public.cards enable row level security;
+create policy "Public read cards" on public.cards for select to anon, authenticated using(true);
+create policy "Admins insert cards" on public.cards for insert to authenticated with check(exists(select 1 from public.admins a where a.user_id=(select auth.uid())));
+create policy "Admins update cards" on public.cards for update to authenticated using(exists(select 1 from public.admins a where a.user_id=(select auth.uid()))) with check(exists(select 1 from public.admins a where a.user_id=(select auth.uid())));
+create policy "Admins delete cards" on public.cards for delete to authenticated using(exists(select 1 from public.admins a where a.user_id=(select auth.uid())));
+insert into storage.buckets (id,name,public,file_size_limit,allowed_mime_types) values('card-images','card-images',true,8388608,array['image/jpeg','image/png','image/webp']) on conflict(id) do nothing;
+create policy "Public card photos" on storage.objects for select to anon,authenticated using(bucket_id='card-images');
+create policy "Admins upload photos" on storage.objects for insert to authenticated with check(bucket_id='card-images' and exists(select 1 from public.admins a where a.user_id=(select auth.uid())));
+-- IMPORTANT: After running this script, run the following separately with your real email:
+-- insert into public.admins(user_id) select id from auth.users where email='YOUR_EMAIL_HERE' on conflict do nothing;
